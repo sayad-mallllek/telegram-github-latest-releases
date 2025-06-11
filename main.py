@@ -241,70 +241,149 @@ def send_telegram_message(message, parse_mode="HTML"):
 
 
 def main():
-    last_releases = load_last_releases()
+    """Main function to check for new GitHub releases"""
+    print("🔍 Starting GitHub releases check...")
 
-    for repo in REPOS:
-        try:
-            # Fetch latest release for this repository
-            response = requests.get(
-                f"https://api.github.com/repos/{repo}/releases/latest"
-            )
-            response.raise_for_status()
-            latest_release = response.json()
+    try:
+        last_releases = load_last_releases()
+        print(f"📋 Loaded {len(last_releases)} previous release records")
 
-            # Check if this is a new release
-            if (
-                repo not in last_releases
-                or str(latest_release["id"]) != last_releases[repo]
-            ):
-                # Format release notes for Telegram
-                release_notes = github_to_telegram_html(latest_release["body"])
+        new_releases_found = 0
 
-                # Create message for Telegram with HTML formatting
-                message = f"🚀 <b>New {repo} Release: {latest_release['name']}</b>\n\n"
-                message += f"<b>Release Notes:</b>\n{release_notes}\n\n"
-                message += f"<a href=\"{latest_release['html_url']}\">View Release</a>"
+        for repo in REPOS:
+            try:
+                print(f"🔎 Checking {repo}...")
 
-                # Send to Telegram
-                if send_telegram_message(message):
-                    print(
-                        f"✅ Notification sent for {repo} release {latest_release['name']}"
+                # Fetch latest release for this repository
+                response = requests.get(
+                    f"https://api.github.com/repos/{repo}/releases/latest"
+                )
+                response.raise_for_status()
+                latest_release = response.json()
+
+                # Check if this is a new release
+                if (
+                    repo not in last_releases
+                    or str(latest_release["id"]) != last_releases[repo]
+                ):
+                    print(f"🆕 New release found for {repo}: {latest_release['name']}")
+                    new_releases_found += 1
+
+                    # Format release notes for Telegram
+                    release_notes = github_to_telegram_html(latest_release["body"])
+
+                    # Create message for Telegram with HTML formatting
+                    message = (
+                        f"🚀 <b>New {repo} Release: {latest_release['name']}</b>\n\n"
                     )
+                    message += f"<b>Release Notes:</b>\n{release_notes}\n\n"
+                    message += (
+                        f"<a href=\"{latest_release['html_url']}\">View Release</a>"
+                    )
+
+                    # Send to Telegram
+                    if send_telegram_message(message):
+                        print(
+                            f"✅ Notification sent for {repo} release {latest_release['name']}"
+                        )
+                    else:
+                        print(
+                            f"❌ Failed to send notification for {repo} release {latest_release['name']}"
+                        )
+
+                    # Update last release ID for this repository
+                    last_releases[repo] = str(latest_release["id"])
+
                 else:
-                    print(
-                        f"❌ Failed to send notification for {repo} release {latest_release['name']}"
-                    )
+                    print(f"✓ No new releases for {repo}")
 
-                # Update last release ID for this repository
-                last_releases[repo] = str(latest_release["id"])
+            except requests.RequestException as e:
+                print(f"❌ Error checking {repo}: {str(e)}")
 
-            else:
-                print(f"No new releases for {repo}")
+        # Save all release IDs at once
+        save_last_release(last_releases)
 
-        except requests.RequestException as e:
-            print(f"❌ Error checking {repo}: {str(e)}")
+        print(
+            f"✅ GitHub releases check completed. Found {new_releases_found} new releases."
+        )
+        return {"new_releases": new_releases_found, "total_repos": len(REPOS)}
 
-    # Save all release IDs at once
-    save_last_release(last_releases)
+    except Exception as e:
+        print(f"❌ Critical error in main function: {str(e)}")
+        raise e
 
 
+def handler(request):
+    """Vercel serverless function handler"""
+    try:
+        # Run the main GitHub releases check
+        result = main()
+
+        # Return success response with results
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+            "body": json.dumps(
+                {
+                    "message": f"GitHub releases check completed successfully. Found {result['new_releases']} new releases out of {result['total_repos']} repositories.",
+                    "new_releases_count": result["new_releases"],
+                    "total_repositories": result["total_repos"],
+                    "timestamp": str(os.environ.get("VERCEL_DEPLOYMENT_ID", "local")),
+                    "status": "success",
+                }
+            ),
+        }
+    except Exception as e:
+        print(f"❌ Error in handler: {str(e)}")
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+            },
+            "body": json.dumps(
+                {
+                    "message": f"Error during GitHub releases check: {str(e)}",
+                    "status": "error",
+                    "timestamp": str(os.environ.get("VERCEL_DEPLOYMENT_ID", "local")),
+                }
+            ),
+        }
+
+
+# Keep the old function for backwards compatibility
 def handle_request(request):
-    """Handler for serverless function requests"""
-    main()
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"message": "GitHub releases check completed successfully"}),
-    }
+    """Handler for serverless function requests (legacy)"""
+    return handler(request)
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests for Vercel serverless function"""
-        result = handle_request(self)
+        result = handler(self)
         self.send_response(result["statusCode"])
-        self.send_header("Content-type", "application/json")
+        for key, value in result.get("headers", {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(result["body"].encode())
+        return
+
+    def do_POST(self):
+        """Handle POST requests for Vercel serverless function"""
+        self.do_GET()
+
+    def do_OPTIONS(self):
+        """Handle OPTIONS requests for CORS"""
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
         return
 
 

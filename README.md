@@ -51,13 +51,21 @@ pip install -r requirements.txt
 
 ### 5. Usage
 
-Run locally:
+**Local Development:**
 
 ```bash
 python main.py
 ```
 
-Or deploy as a serverless function and set up a cron job to run it periodically.
+**Vercel Deployment:**
+
+1. Install Vercel CLI: `npm install -g vercel`
+2. Login: `vercel login`
+3. Deploy: `vercel`
+4. Set environment variables in Vercel dashboard
+5. Visit your deployed site - it will automatically check for releases!
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 
 ## How it works
 

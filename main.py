@@ -4,11 +4,15 @@ import json
 import re
 from pathlib import Path
 import html2text
-from http.server import BaseHTTPRequestHandler
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+# Load environment variables (for local development)
+# In production (Vercel), environment variables are set directly
+try:
+    load_dotenv(override=True)
+except Exception as e:
+    print(f"⚠️ Could not load .env file (this is normal in production): {e}")
 
 
 # List of repositories to monitor (owner/repo format)
@@ -316,11 +320,13 @@ def main():
 def handler(request):
     """Vercel serverless function handler"""
     try:
+        print("🚀 Starting GitHub releases check via Vercel handler...")
+
         # Run the main GitHub releases check
         result = main()
 
         # Return success response with results
-        return {
+        response = {
             "statusCode": 200,
             "headers": {
                 "Content-Type": "application/json",
@@ -338,8 +344,16 @@ def handler(request):
                 }
             ),
         }
+
+        print(
+            f"✅ Handler completed successfully: {result['new_releases']} new releases found"
+        )
+        return response
+
     except Exception as e:
-        print(f"❌ Error in handler: {str(e)}")
+        error_msg = f"Error during GitHub releases check: {str(e)}"
+        print(f"❌ Error in handler: {error_msg}")
+
         return {
             "statusCode": 500,
             "headers": {
@@ -348,7 +362,7 @@ def handler(request):
             },
             "body": json.dumps(
                 {
-                    "message": f"Error during GitHub releases check: {str(e)}",
+                    "message": error_msg,
                     "status": "error",
                     "timestamp": str(os.environ.get("VERCEL_DEPLOYMENT_ID", "local")),
                 }
@@ -360,31 +374,6 @@ def handler(request):
 def handle_request(request):
     """Handler for serverless function requests (legacy)"""
     return handler(request)
-
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        """Handle GET requests for Vercel serverless function"""
-        result = handler(self)
-        self.send_response(result["statusCode"])
-        for key, value in result.get("headers", {}).items():
-            self.send_header(key, value)
-        self.end_headers()
-        self.wfile.write(result["body"].encode())
-        return
-
-    def do_POST(self):
-        """Handle POST requests for Vercel serverless function"""
-        self.do_GET()
-
-    def do_OPTIONS(self):
-        """Handle OPTIONS requests for CORS"""
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-        return
 
 
 if __name__ == "__main__":

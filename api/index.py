@@ -1,11 +1,21 @@
 import sys
 import os
+import json
 
 # Add the parent directory to the path to import from main.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from main import handler
-import json
+try:
+    from main import handler as main_handler
+except ImportError as e:
+    print(f"❌ Failed to import main handler: {e}")
+
+    def main_handler(request):
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": f"Import error: {str(e)}"}),
+        }
 
 
 def index_handler(request):
@@ -14,7 +24,7 @@ def index_handler(request):
     # Always trigger the GitHub releases check when the page is visited
     try:
         print("🔍 Triggering GitHub releases check from main page visit...")
-        check_result = handler(request)
+        check_result = main_handler(request)
         check_successful = check_result.get("statusCode") == 200
 
         # Parse the result to get meaningful info
@@ -146,5 +156,6 @@ def index_handler(request):
     }
 
 
-# Export the handler for Vercel
-handler = index_handler
+def handler(request):
+    """Vercel API handler for index route"""
+    return index_handler(request)

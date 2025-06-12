@@ -2,11 +2,11 @@
   "functions": {
     "api/index.py": {
       "runtime": "@vercel/python@4.3.0",
-      "includeFiles": ["main.py"]
+      "includeFiles": "main.py"
     },
     "api/check.py": {
       "runtime": "@vercel/python@4.3.0",
-      "includeFiles": ["main.py"]
+      "includeFiles": "main.py"
     }
   },
   "routes": [
